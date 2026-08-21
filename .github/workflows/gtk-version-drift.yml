@@ -121,11 +121,13 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo, title, body,
             });
 
-  # virt-viewer 11.0 is from November 2021 and pagure is effectively frozen --
-  # development moved to gitlab.com/virt-viewer/virt-viewer -- so this will
-  # almost never fire. When it does it matters: a new release means
-  # patches/virt-viewer-0001-accel-command-modifier.patch has to be rebased,
-  # which is the same class of breakage the gtk job above exists to catch.
+  # virt-viewer 11.0 is from November 2021 and upstream has been quiet since --
+  # development moved from pagure to gitlab.com/virt-viewer/virt-viewer, and the
+  # pagure release listing has since been taken down entirely -- so this will
+  # almost never fire. When it does it matters: a new release means all four
+  # patches/virt-viewer-*.patch have to be rebased, and 0003 and 0004 rewrite UI
+  # code that upstream is far more likely to have touched than the one-line accel
+  # fix in 0001. Same class of breakage the gtk job above exists to catch.
   virt-viewer:
     runs-on: ubuntu-latest
     steps:
@@ -137,16 +139,18 @@ jobs:
           set -euo pipefail
           ours=$(grep -m1 '^  url ' 'virt-viewer.rb' \
                  | sed -E 's|.*/virt-viewer-([0-9.]+)\.tar\.xz.*|\1|')
+          # The releases API. Not the old pagure listing, which is gone, and not
+          # gitlab.com/virt-viewer/virt-viewer/-/releases, which is rendered
+          # client-side and has no version strings in its HTML at all.
           # `|| true` so an empty match is reported below rather than dying in
           # the pipe under `set -o pipefail` with nothing useful in the log.
-          latest=$(curl -fsSL https://releases.pagure.org/virt-viewer/ \
-                   | grep -oE 'virt-viewer-[0-9]+(\.[0-9]+)+\.tar\.xz' \
-                   | sed -E 's|virt-viewer-(.*)\.tar\.xz|\1|' \
+          latest=$(curl -fsSL 'https://gitlab.com/api/v4/projects/virt-viewer%2Fvirt-viewer/releases' \
+                   | python3 -c 'import json,sys; print("\n".join(r["tag_name"].removeprefix("v") for r in json.load(sys.stdin)))' \
                    | sort -V | tail -1 || true)
-          # An empty result means the listing changed shape, not that there is no
-          # new release. Fail rather than report "in step" on no evidence.
+          # An empty result means the API changed shape, not that there is no new
+          # release. Fail rather than report "in step" on no evidence.
           if [ -z "$latest" ]; then
-            echo "::error::could not parse any version out of the pagure listing"
+            echo "::error::could not parse any version out of the GitLab releases API"
             exit 1
           fi
           echo "ours=$ours" >> "$GITHUB_OUTPUT"
@@ -182,15 +186,16 @@ jobs:
             const body = [
               `Upstream released **${LATEST}**; this tap builds **${OURS}**.`,
               ``,
-              `\`patches/virt-viewer-0001-accel-command-modifier.patch\` is a context diff`,
-              `against ${OURS} and will need rebasing. Check first whether the Command-key`,
-              `modifier fix landed upstream -- if it did, the patch can simply be dropped.`,
+              `All four \`patches/virt-viewer-*.patch\` are context diffs against ${OURS}`,
+              `and will need rebasing. Check first whether any of them landed upstream --`,
+              `0001 (Command-key modifier) is the likeliest, and any that did can simply`,
+              `be dropped.`,
               ``,
               '```sh',
-              `curl -fsSLO https://releases.pagure.org/virt-viewer/virt-viewer-${LATEST}.tar.xz`,
+              `curl -fsSLO https://gitlab.com/api/v4/projects/virt-viewer%2Fvirt-viewer/packages/generic/release-assets/v${LATEST}/virt-viewer-${LATEST}.tar.xz`,
               `sha256sum virt-viewer-${LATEST}.tar.xz`,
               `tar xf virt-viewer-${LATEST}.tar.xz`,
-              `cd virt-viewer-${LATEST} && patch -p1 --dry-run < ../patches/virt-viewer-0001-accel-command-modifier.patch`,
+              `cd virt-viewer-${LATEST} && for p in ../patches/virt-viewer-*.patch; do patch -p1 --dry-run < "$p"; done`,
               '```',
               ``,
               `Then bump \`url\`/\`sha256\` in \`virt-viewer.rb\`, regenerate its \`__END__\``,
