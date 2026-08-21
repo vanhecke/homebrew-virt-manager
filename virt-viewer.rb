@@ -99,3 +99,26 @@ index d718491..4325108 100644
      type: 'xml',
      input: metainfo + '.in',
      output: metainfo,
+--- a/src/virt-viewer-window.c
++++ b/src/virt-viewer-window.c
+@@ -825,12 +825,18 @@
+         {GDK_SHIFT_MASK, GDK_KEY_Shift_L},
+         {GDK_CONTROL_MASK, GDK_KEY_Control_L},
+         {GDK_MOD1_MASK, GDK_KEY_Alt_L},
++        /* The GDK quartz backend reports the Command key as MOD2 and sets META
++         * alongside it, and it is what <Primary> resolves to on macOS. Both
++         * bits describe the one key, so keep them in a single entry to avoid
++         * sending Meta_L twice. */
++        {GDK_MOD2_MASK | GDK_META_MASK, GDK_KEY_Meta_L},
+     };
+ 
+     g_warn_if_fail((accel_mods &
+-                    ~(GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_MOD1_MASK)) == 0);
++                    ~(GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_MOD1_MASK |
++                      GDK_MOD2_MASK | GDK_META_MASK)) == 0);
+ 
+-    keys = val = g_new(guint, G_N_ELEMENTS(modifiers) + 2); /* up to 3 modifiers, key and the stop symbol */
++    keys = val = g_new(guint, G_N_ELEMENTS(modifiers) + 2); /* one key per modifier, the key and the stop symbol */
+     /* first, send the modifiers */
+     for (i = 0; i < G_N_ELEMENTS(modifiers); i++) {
+         if (accel_mods & modifiers[i].mask)
