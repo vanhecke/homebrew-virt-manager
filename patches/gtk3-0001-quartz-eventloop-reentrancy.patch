@@ -1,0 +1,34 @@
+--- a/gdk/quartz/gdkeventloop-quartz.c
++++ b/gdk/quartz/gdkeventloop-quartz.c
+@@ -577,6 +577,31 @@
+ 
+   if (select_thread_state == WAITING) /* The poll completed */
+     {
++      /* The select thread's poll state is global, but poll_func() is
++       * re-entrant: a nested main loop (spice-gtk runs one from its
++       * clipboard "get" callback, gtk_dialog_run() from a dialog) or the
++       * CFRunLoop observer path in run_loop_before_waiting() can hand the
++       * select thread a different set of descriptors while our asynchronous
++       * poll is still outstanding. The last_ufds check in poll_func() does
++       * not catch that: it compares pointers, and GLib hands back the same
++       * cached poll array with a changed set of file descriptors in it.
++       *
++       * When that has happened the poll that completed is not ours and there
++       * is nothing here to collect. Report no ready descriptors rather than
++       * aborting; poll_func() opens every call with a synchronous poll, so
++       * the activity is picked up on the very next main loop iteration.
++       *
++       * https://gitlab.gnome.org/GNOME/gtk/-/issues/2961
++       */
++      if (current_pollfds == NULL || current_n_pollfds == 0 ||
++	  !pollfds_equal (ufds, nfds, current_pollfds, current_n_pollfds - 1))
++	{
++	  GDK_NOTE (EVENTLOOP, g_message ("EventLoop: Poll result is for a different "
++					  "set of file descriptors, discarding"));
++	  SELECT_THREAD_UNLOCK ();
++	  return 0;
++	}
++
+       for (i = 0; i < nfds; i++)
+ 	{
+ 	  if (ufds[i].fd == -1)
