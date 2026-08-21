@@ -10,10 +10,13 @@ long ago. The repository keeps its name for continuity with the fork point.
 
 Fork of [jeffreywildman/homebrew-virt-manager][upstream].
 
-## Usage
+## Installation
 
     brew tap vanhecke/virt-manager
-    brew install --build-from-source vanhecke/virt-manager/virt-viewer
+    brew trust vanhecke/virt-manager
+    brew install vanhecke/virt-manager/virt-viewer
+
+Compilation might take a few minutes.
 
 ## The patches
 
