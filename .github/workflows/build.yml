@@ -1,12 +1,35 @@
 name: build
 
-# The expensive half, kept off the push path on purpose. gtk+3-virt-viewer is
-# built from source and takes around twenty minutes locally, longer on a hosted
-# runner. Neither formula changes often, so building on every push would mostly
-# re-prove the same result. Monthly plus on demand still catches the thing this
-# is for: a dependency in the graph moving underneath us.
+# Compiling the two formulae is cheap. Measured on an M-series laptop with
+# `brew reinstall --build-from-source`, wall clock, everything included:
+#
+#   gtk+3-virt-viewer  54s  (12s meson configure, ~31s compiling 920 ninja targets)
+#   virt-viewer        22s  (12s meson configure, ~2s compile, ~2s post_install)
+#
+# An earlier version of this comment claimed twenty minutes. That figure was never
+# measured and was wrong by a factor of twenty-five; it is recorded here because it
+# was also the stated reason for keeping this job off the push path.
+#
+# The job still takes about ten minutes on a hosted runner, and almost none of that
+# is our code -- it is installing the dependency tree (gtk+3, spice-gtk, gtk-vnc,
+# libvirt and roughly a hundred transitive bottles) onto a clean machine. So this
+# runs when something that can actually change the build changes, plus monthly to
+# catch that dependency tree moving underneath us.
 
 on:
+  # Duplicated rather than shared via a YAML anchor: GitHub Actions does not
+  # support anchors in workflow files.
+  push:
+    branches: [master]
+    paths:
+      - "**.rb"
+      - "patches/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "**.rb"
+      - "patches/**"
+      - ".github/workflows/build.yml"
   schedule:
     - cron: "43 5 3 * *"
   workflow_dispatch:
