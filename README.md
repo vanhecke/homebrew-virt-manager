@@ -70,6 +70,21 @@ drift, and `tools/sync-gtk-version.sh --bump` does the update.
   and Win32 backends read it.
 - **Debugging** — `remote-viewer --debug --no-fork`. Note that `--debug` alone prints
   nothing: GLib filters debug messages unless `G_MESSAGES_DEBUG=all` is set too.
+- **The first launch is slow and prints a wall of errors** — a few seconds of delay,
+  then `GLib-GIRepository-WARNING: Failed to load shared library 'libgobject-2.0.0.dylib'`,
+  `CRITICAL: can't find gi.repository.Gst`, and a run of `objc[...]: Class ... is
+  implemented in both .../libgtk-3.0.dylib and .../libgtk-4.1.dylib`. All of it is
+  harmless and none of it comes from this tap. GStreamer rebuilds its plugin cache
+  whenever `~/.cache/gstreamer-1.0/` is missing, and the scan runs in a separate
+  `gst-plugin-scanner` process that dlopens every installed plugin — including both
+  `libgstgtk.dylib` (GTK3) and `libgstgtk4.dylib`, which is where the duplicate ObjC
+  classes come from. **Check the pid in the brackets**: it is the scanner's, not
+  remote-viewer's, which never loads GTK4. The typelib warnings are a Homebrew problem
+  rather than a wrapper one — GI typelibs name dylibs by leaf name and `/opt/homebrew/lib`
+  is not on dyld's fallback path, so they appear with stock gtk+3 and no
+  `DYLD_LIBRARY_PATH` at all. The scan takes about two seconds, writes
+  `registry.aarch64.bin`, and the noise stays gone until the cache is next invalidated.
+  Deleting the registry and reconnecting was tested directly: it still works, just noisily.
 
 ## Tests
 
