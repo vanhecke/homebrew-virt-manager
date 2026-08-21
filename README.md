@@ -93,6 +93,11 @@ SPICE session, so `tests/ab/` builds two gtk prefixes and swaps them under a rea
 Run `tests/ab/run.sh <variant> --check` before trusting any comparison. See
 `tests/README.md`.
 
+[lint] runs `brew style`, `brew readall` and `brew audit --strict --online` on every
+push; the audit is the part that notices an upstream tarball turning into a 404.
+[build] compiles both formulae from source monthly and on demand, and [drift] watches
+for new gtk+3 and virt-viewer releases and opens an issue.
+
 ## Maintenance
 
 Both kegs are pinned, so editing a formula has no effect until you unpin and reinstall
@@ -106,12 +111,18 @@ explicitly — `brew upgrade` skips them silently:
 previously swept away ten unrelated leaf formulae. Bumping `revision` is pointless
 while a keg is pinned — the explicit reinstall is what applies changes.
 
-To rebase onto a new upstream release, bump `url`/`sha256`, extract the tarball, apply
-each patch with `patch -p1`, fix any rejects, regenerate with `diff -u`, and rebuild.
+To rebase onto a new upstream release, bump `url`/`sha256` — releases are on
+[GitLab][releases] now, the old pagure listing is gone — then extract the tarball,
+apply each patch with `patch -p1`, fix any rejects, regenerate with `diff -u`, and
+rebuild.
 
 [homebrew]: http://brew.sh/
 [virt-manager]: https://virt-manager.org/
 [upstream]: https://github.com/jeffreywildman/homebrew-virt-manager
+[releases]: https://gitlab.com/virt-viewer/virt-viewer/-/releases
+[lint]: https://github.com/vanhecke/homebrew-virt-manager/blob/master/.github/workflows/lint.yml
+[build]: https://github.com/vanhecke/homebrew-virt-manager/blob/master/.github/workflows/build.yml
+[drift]: https://github.com/vanhecke/homebrew-virt-manager/blob/master/.github/workflows/gtk-version-drift.yml
 [p1]: https://github.com/vanhecke/homebrew-virt-manager/commit/f94c82c4876b27a593ed429a425dcb7c118fc304
 [p2]: https://github.com/vanhecke/homebrew-virt-manager/commit/c261f4c0e57fdf3a149c2fe847e1a0a41b4788f4
 [p3]: https://github.com/vanhecke/homebrew-virt-manager/commit/c2e04501b408575b7994b37c79c3bd0ed295eaa2
