@@ -1,0 +1,157 @@
+--- a/gtk/gtkclipboard-quartz.c
++++ b/gtk/gtkclipboard-quartz.c
+@@ -46,6 +46,20 @@
+ 
+ @end
+ 
++/* Cocoa has no equivalent of the X11 owner-change event, and
++ * pasteboardChangedOwner: is documented as unreliable, so a change made to the
++ * system pasteboard by another application is never reported to us. Watching
++ * the pasteboard's changeCount is the supported way to notice; this observer
++ * arranges for that check to happen whenever the application is activated.
++ *
++ * https://gitlab.gnome.org/GNOME/gtk/-/issues/1757
++ */
++@interface GtkClipboardPasteboardWatcher : NSObject {
++  GtkClipboard *clipboard;
++}
++
++@end
++
+ typedef struct _GtkClipboardClass GtkClipboardClass;
+ 
+ struct _GtkClipboard
+@@ -54,6 +68,7 @@
+ 
+   NSPasteboard *pasteboard;
+   GtkClipboardOwner *owner;
++  GtkClipboardPasteboardWatcher *watcher;
+   NSInteger change_count;
+ 
+   GdkAtom selection;
+@@ -95,6 +110,7 @@
+ static GtkClipboard *clipboard_peek       (GdkDisplay       *display,
+ 					   GdkAtom           selection,
+ 					   gboolean          only_if_exists);
++static void          clipboard_check_pasteboard_change (GtkClipboard *clipboard);
+ 
+ @implementation GtkClipboardOwner
+ -(void)pasteboard:(NSPasteboard *)sender provideDataForType:(NSString *)type
+@@ -153,7 +169,26 @@
+ 
+ @end
+ 
++@implementation GtkClipboardPasteboardWatcher
+ 
++- (id)initWithClipboard:(GtkClipboard *)aClipboard
++{
++  self = [super init];
++
++  if (self)
++    clipboard = aClipboard;
++
++  return self;
++}
++
++- (void)pasteboardMayHaveChanged:(NSNotification *)notification
++{
++  clipboard_check_pasteboard_change (clipboard);
++}
++
++@end
++
++
+ static const gchar clipboards_owned_key[] = "gtk-clipboards-owned";
+ static GQuark clipboards_owned_key_id = 0;
+ 
+@@ -225,6 +260,13 @@
+   clipboards = g_object_get_data (G_OBJECT (clipboard->display), "gtk-clipboard-list");
+   if (g_slist_index (clipboards, clipboard) >= 0)
+     g_warning ("GtkClipboard prematurely finalized");
++
++  if (clipboard->watcher)
++    {
++      [[NSNotificationCenter defaultCenter] removeObserver:clipboard->watcher];
++      [clipboard->watcher release];
++      clipboard->watcher = NULL;
++    }
+ 
+   clipboard_unset (clipboard);
+ 
+@@ -568,6 +610,42 @@
+   if (old_have_owner &&
+       old_n_storable_targets != -1)
+     g_object_unref (old_data);
++}
++
++/* If the pasteboard has moved on since we last looked at it, someone else owns
++ * it now. Drop our side of it and emit ::owner-change, which is the signal
++ * applications watch to learn that the clipboard changed underneath them.
++ *
++ * Note that this reports the change when the application is activated rather
++ * than at the instant of the copy, which is the same behaviour GTK has on
++ * Wayland.
++ */
++static void
++clipboard_check_pasteboard_change (GtkClipboard *clipboard)
++{
++  GdkEventOwnerChange *event;
++
++  if (clipboard->change_count >= [clipboard->pasteboard changeCount])
++    return;
++
++  /* Unset first, so that gtk_clipboard_get_owner () already reports NULL by
++   * the time a handler runs.
++   */
++  clipboard_unset (clipboard);
++  clipboard->change_count = [clipboard->pasteboard changeCount];
++
++  event = (GdkEventOwnerChange *) gdk_event_new (GDK_OWNER_CHANGE);
++  event->window = NULL;
++  event->send_event = TRUE;
++  event->owner = NULL;
++  event->reason = GDK_OWNER_CHANGE_NEW_OWNER;
++  event->selection = clipboard->selection;
++  event->time = GDK_CURRENT_TIME;
++  event->selection_time = GDK_CURRENT_TIME;
++
++  g_signal_emit (clipboard, clipboard_signals[OWNER_CHANGE], 0, event);
++
++  gdk_event_free ((GdkEvent *) event);
+ }
+ 
+ void
+@@ -576,7 +654,7 @@
+   clipboard_unset (clipboard);
+ #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
+   if (gdk_quartz_osx_version() >= GDK_OSX_SNOW_LEOPARD)
+-    [clipboard->pasteboard clearContents];
++    clipboard->change_count = [clipboard->pasteboard clearContents];
+ #if MAC_OS_X_VERSION_MIN_REQUIRED < 1060
+   else
+ #endif
+@@ -1143,6 +1221,24 @@
+ 
+       clipboard->pasteboard = [NSPasteboard pasteboardWithName:pasteboard_name];
+ 
++      clipboard->watcher =
++	[[GtkClipboardPasteboardWatcher alloc] initWithClipboard:clipboard];
++
++      /* Application activation covers switching back from another app; window
++       * key changes cover regaining focus without the app itself deactivating.
++       * The check is idempotent, so being called from both is harmless.
++       */
++      [[NSNotificationCenter defaultCenter]
++	addObserver:clipboard->watcher
++	   selector:@selector (pasteboardMayHaveChanged:)
++	       name:NSApplicationDidBecomeActiveNotification
++	     object:nil];
++      [[NSNotificationCenter defaultCenter]
++	addObserver:clipboard->watcher
++	   selector:@selector (pasteboardMayHaveChanged:)
++	       name:NSWindowDidBecomeKeyNotification
++	     object:nil];
++
+       [pool release];
+ 
+       clipboard->selection = selection;
