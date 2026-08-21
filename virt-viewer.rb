@@ -34,7 +34,6 @@ class VirtViewer < Formula
     end
   end
 
-  depends_on "gettext" => :build
   depends_on "meson" => :build
   depends_on "ninja" => :build
   depends_on "pkgconf" => :build
@@ -45,6 +44,13 @@ class VirtViewer < Formula
   # nothing but virt-viewer's own app icon, and the toolbar renders blank.
   depends_on "adwaita-icon-theme"
   depends_on "desktop-file-utils"
+  # gdk-pixbuf, gettext and pango arrive transitively through gtk+3, but the built
+  # binaries link libgdk_pixbuf-2.0, libintl.8 and libpango-1.0 by name, which
+  # `brew linkage --test` reports as "Indirect dependencies with linkage" and fails
+  # on. gettext was declared `=> :build` for msgfmt; a plain dependency covers both
+  # that and the runtime linkage.
+  depends_on "gdk-pixbuf"
+  depends_on "gettext"
   depends_on "glib"
   depends_on "gtk+3"
   depends_on "gtk-vnc"
@@ -53,6 +59,7 @@ class VirtViewer < Formula
   # transitive dependency.
   depends_on "libvirt"
   depends_on "libvirt-glib"
+  depends_on "pango"
   depends_on "shared-mime-info"
   depends_on "spice-gtk"
   depends_on "vanhecke/virt-manager/gtk+3-virt-viewer"
