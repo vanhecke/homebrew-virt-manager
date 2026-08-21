@@ -1,0 +1,34 @@
+--- a/gdk/quartz/gdkevents-quartz.c
++++ b/gdk/quartz/gdkevents-quartz.c
+@@ -1914,9 +1914,31 @@
+       GDK_QUARTZ_ALLOC_POOL;
+ 
+       g_value_set_boolean (value, TRUE);
++
++      GDK_QUARTZ_RELEASE_POOL;
++
++      return TRUE;
++    }
++  else if (strcmp (name, "gtk-application-prefer-dark-theme") == 0)
++    {
++      NSString *style;
++      gboolean dark;
++
++      GDK_QUARTZ_ALLOC_POOL;
++
++      /* macOS publishes the system appearance in this user default: it is
++       * absent for light and "Dark" for dark. NSAppearance would be more
++       * direct, but it is a per-window property whereas this is the
++       * screen-wide setting GtkSettings is asking about.
++       */
++      style = [[NSUserDefaults standardUserDefaults]
++                stringForKey:@"AppleInterfaceStyle"];
++      dark = (style != nil && [style isEqualToString:@"Dark"]);
+ 
+       GDK_QUARTZ_RELEASE_POOL;
+ 
++      g_value_set_boolean (value, dark);
++
+       return TRUE;
+     }
+   
