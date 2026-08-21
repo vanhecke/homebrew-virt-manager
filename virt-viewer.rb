@@ -15,12 +15,19 @@ class VirtViewer < Formula
   # claims 'GPLv3+', which is simply wrong -- do not "correct" this to match it.
   license "GPL-2.0-or-later"
 
+  # The pagure listing this would naturally point at is gone, GitLab's own releases
+  # page is rendered client-side and carries no version strings, and unauthenticated
+  # `git ls-remote` against gitlab.com answers 403 -- so neither PageMatch nor :git
+  # can work here. The releases API is what is left, and it is what the url above is
+  # served from anyway.
+  #
+  # Keep this comment *outside* the block. `brew bottle --merge --write` picks the
+  # stanza preceding `bottle` and then, in Library/Homebrew/utils/ast.rb, compares each
+  # comment's first line against that stanza's *first* line rather than its last. A
+  # comment on the line straight after `livecheck do` therefore becomes the insertion
+  # point, and the bottle block lands inside the livecheck block:
+  #   undefined method 'bottle' for an instance of Livecheck
   livecheck do
-    # The pagure listing this would naturally point at is gone, GitLab's own releases
-    # page is rendered client-side and carries no version strings, and unauthenticated
-    # `git ls-remote` against gitlab.com answers 403 -- so neither PageMatch nor :git
-    # can work here. The releases API is what is left, and it is what the url above
-    # is served from anyway.
     url "https://gitlab.com/api/v4/projects/virt-viewer%2Fvirt-viewer/releases"
     strategy :json do |json|
       json.map { |release| release["tag_name"]&.delete_prefix("v") }
