@@ -83,8 +83,7 @@ drift, and `tools/sync-gtk-version.sh --bump` does the update.
 - **Debugging** — `remote-viewer --debug --no-fork`. Note that `--debug` alone prints
   nothing: GLib filters debug messages unless `G_MESSAGES_DEBUG=all` is set too.
 - **Appearance** — light/dark follows System Settings, the titlebar and window controls
-  are drawn by macOS, and the controls live in the menu bar. A GTK theme is not needed
-  for any of that.
+  are drawn by macOS, and the controls live in the menu bar.
 
 ## Tests
 
