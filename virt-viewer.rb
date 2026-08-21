@@ -485,3 +485,108 @@ index d718491..4325108 100644
      model = gtk_menu_button_get_menu_model(GTK_MENU_BUTTON(menu));
  
      return g_menu_model_get_item_link(model, 0, G_MENU_LINK_SECTION);
+--- a/src/virt-viewer-window.c
++++ b/src/virt-viewer-window.c
+@@ -198,6 +198,36 @@
+     g_clear_object(&self->menubar);
+ 
+     G_OBJECT_CLASS (virt_viewer_window_parent_class)->dispose (object);
++}
++
++/* Fullscreen can be toggled without going through our own action: the green
++ * titlebar button and Window > Enter Full Screen drive the NSWindow directly.
++ * Left alone that desynchronises self->fullscreen and the View menu toggle, so
++ * the next explicit toggle does nothing. Re-entering GDK from here is harmless:
++ * gdk_quartz_window_fullscreen() and _unfullscreen() both no-op when the window
++ * is already in the requested state.
++ */
++static gboolean
++virt_viewer_window_window_state_event(GtkWidget *widget G_GNUC_UNUSED,
++                                      GdkEventWindowState *event,
++                                      gpointer user_data)
++{
++    VirtViewerWindow *self = user_data;
++    gboolean fullscreen;
++
++    if (!(event->changed_mask & GDK_WINDOW_STATE_FULLSCREEN))
++        return FALSE;
++
++    fullscreen = (event->new_window_state & GDK_WINDOW_STATE_FULLSCREEN) != 0;
++
++    /* We initiated it; enter/leave already set this before calling GDK. */
++    if (fullscreen == self->fullscreen)
++        return FALSE;
++
++    g_action_group_change_action_state(G_ACTION_GROUP(self->window), "fullscreen",
++                                       g_variant_new_boolean(fullscreen));
++
++    return FALSE;
+ }
+ 
+ static void
+@@ -606,6 +636,16 @@
+     gtk_container_add(GTK_CONTAINER(overlay), GTK_WIDGET(self->notebook));
+     self->revealer = virt_viewer_timed_revealer_new(toolbar);
+     gtk_overlay_add_overlay(GTK_OVERLAY(overlay), GTK_WIDGET(self->revealer));
++    /* The overlay toolbar exists to give a fullscreen window a way back out and
++     * somewhere to put the controls. macOS needs neither: the system menu bar
++     * stays reachable in fullscreen and carries the same actions. Keep the
++     * widget, because the menu bar reuses the menu models hung off its buttons,
++     * but never let it appear. It reveals itself on enter-notify, so hiding it
++     * is what actually suppresses it, and no_show_all stops the later
++     * gtk_widget_show_all() from undoing that.
++     */
++    gtk_widget_set_no_show_all(GTK_WIDGET(self->revealer), TRUE);
++    gtk_widget_hide(GTK_WIDGET(self->revealer));
+ 
+     self->window = GTK_WIDGET(gtk_builder_get_object(self->builder, "viewer"));
+ 
+@@ -614,6 +654,9 @@
+ 
+     gtk_window_add_accel_group(GTK_WINDOW(self->window), self->accel_group);
+ 
++    g_signal_connect(self->window, "window-state-event",
++                     G_CALLBACK(virt_viewer_window_window_state_event), self);
++
+     menuBuilder =
+         gtk_builder_new_from_resource(VIRT_VIEWER_RESOURCE_PREFIX "/ui/virt-viewer-menus.ui");
+ 
+@@ -757,11 +800,6 @@
+ 
+     self->fullscreen = FALSE;
+     self->fullscreen_monitor = -1;
+-    if (self->display) {
+-        virt_viewer_display_set_monitor(self->display, -1);
+-        virt_viewer_display_set_fullscreen(self->display, FALSE);
+-    }
+-    virt_viewer_timed_revealer_force_reveal(self->revealer, FALSE);
+     gtk_widget_set_size_request(self->window, -1, -1);
+     gtk_window_unfullscreen(GTK_WINDOW(self->window));
+ 
+@@ -790,16 +828,16 @@
+         return;
+     }
+ 
+-    if (!self->kiosk) {
+-        virt_viewer_timed_revealer_force_reveal(self->revealer, TRUE);
+-    }
+-
+-    if (self->display) {
+-        virt_viewer_display_set_monitor(self->display, monitor);
+-        virt_viewer_display_set_fullscreen(self->display, TRUE);
+-    }
+-    virt_viewer_window_move_to_monitor(self);
+-
++    /* Everything the X11 path does here is either unnecessary or actively
++     * harmful on macOS, where fullscreen is a window that fills the screen and
++     * nothing more: there is no overlay toolbar to reveal, no window to move or
++     * size by hand, and no reason to switch the display to monitor-derived
++     * geometry. Leaving the display in its normal mode means the guest is
++     * resized from the widget allocation instead -- the same path that runs
++     * when the window is resized by hand, which already works. Driving the
++     * monitor-geometry path here left the guest un-resized and the display
++     * frozen.
++     */
+     if (monitor == -1) {
+         // just go fullscreen on the current monitor
+         gtk_window_fullscreen(GTK_WINDOW(self->window));
