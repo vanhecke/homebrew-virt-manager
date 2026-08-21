@@ -15,6 +15,18 @@ class VirtViewer < Formula
   # claims 'GPLv3+', which is simply wrong -- do not "correct" this to match it.
   license "GPL-2.0-or-later"
 
+  livecheck do
+    # The pagure listing this would naturally point at is gone, GitLab's own releases
+    # page is rendered client-side and carries no version strings, and unauthenticated
+    # `git ls-remote` against gitlab.com answers 403 -- so neither PageMatch nor :git
+    # can work here. The releases API is what is left, and it is what the url above
+    # is served from anyway.
+    url "https://gitlab.com/api/v4/projects/virt-viewer%2Fvirt-viewer/releases"
+    strategy :json do |json|
+      json.map { |release| release["tag_name"]&.delete_prefix("v") }
+    end
+  end
+
   depends_on "gettext" => :build
   depends_on "meson" => :build
   depends_on "ninja" => :build
