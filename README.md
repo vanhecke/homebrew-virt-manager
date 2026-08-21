@@ -1,8 +1,8 @@
 homebrew-virt-manager
 =====================
 
-A [homebrew][homebrew] tap providing `virt-viewer` on macOS with the patches that
-make its SPICE clipboard work.
+A [homebrew][homebrew] tap providing `virt-viewer` on macOS with some patches that
+make it work nicer on macOS (working clipboard, native titlebar, menu in menubar).
 
 **This tap provides `virt-viewer` only.** [`virt-manager`][virt-manager] is in
 homebrew-core (`brew install virt-manager`); the upstream tap dropped its formula
@@ -14,19 +14,8 @@ Fork of [jeffreywildman/homebrew-virt-manager][upstream].
 
     brew tap vanhecke/virt-manager
     brew install --build-from-source vanhecke/virt-manager/virt-viewer
-    brew pin vanhecke/virt-manager/gtk+3-virt-viewer
-    brew pin vanhecke/virt-manager/virt-viewer
-
-**The pins matter.** Without them a later `brew upgrade` replaces these builds with
-Homebrew's unpatched bottles and the crash comes back months later with no obvious
-cause. `brew list --pinned` will remind you.
 
 ## The patches
-
-Stock `remote-viewer` aborts the moment you copy anything in the guest, never pastes
-anything from the host, and behaves like a Linux application bolted onto macOS. Each
-commit below carries the full analysis — root cause, why the fix is shaped the way it
-is, and how it was verified.
 
 Making the clipboard work:
 
@@ -71,10 +60,6 @@ drift, and `tools/sync-gtk-version.sh --bump` does the update.
 
 ## Troubleshooting
 
-- **Blank toolbar icons** — install `adwaita-icon-theme`. It is a dependency now, so
-  only machines that had `virt-viewer` before that will be missing it. `gtk+3` does not
-  pull it in, yet it is where every themed icon the UI asks for lives. Setting
-  `XDG_DATA_DIRS` is *not* the fix, contrary to older guides.
 - **The guest display is tiny on a Retina screen** — launch with `--zoom=200`. By
   default virt-viewer asks the guest for twice the window's logical size; `--zoom`
   divides by the same factor just before that multiply, so the two cancel and the SPICE
@@ -82,8 +67,6 @@ drift, and `tools/sync-gtk-version.sh --bump` does the update.
   and Win32 backends read it.
 - **Debugging** — `remote-viewer --debug --no-fork`. Note that `--debug` alone prints
   nothing: GLib filters debug messages unless `G_MESSAGES_DEBUG=all` is set too.
-- **Appearance** — light/dark follows System Settings, the titlebar and window controls
-  are drawn by macOS, and the controls live in the menu bar.
 
 ## Tests
 
