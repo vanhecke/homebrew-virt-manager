@@ -3,17 +3,29 @@ class VirtViewer < Formula
   homepage "https://virt-manager.org/"
   url "https://releases.pagure.org/virt-viewer/virt-viewer-11.0.tar.xz"
   sha256 "a43fa2325c4c1c77a5c8c98065ac30ef0511a21ac98e590f22340869bad9abd0"
-  revision 0
+  # COPYING is the GPLv2 text and every source header reads "either version 2 of
+  # the License, or (at your option) any later version". Upstream's meson.build
+  # claims 'GPLv3+', which is simply wrong -- do not "correct" this to match it.
+  license "GPL-2.0-or-later"
 
   depends_on "gettext" => :build
   depends_on "meson" => :build
   depends_on "ninja" => :build
-  depends_on "pkg-config" => :build
+  depends_on "pkgconf" => :build
 
+  # Every themed icon the UI asks for (view-fullscreen-symbolic, open-menu-symbolic,
+  # computer-symbolic, ...) lives in Adwaita, which is the default icon theme but is
+  # not a dependency of gtk+3. Without it hicolor is all that is installed, it holds
+  # nothing but virt-viewer's own app icon, and the toolbar renders blank.
+  depends_on "adwaita-icon-theme"
   depends_on "desktop-file-utils"
   depends_on "glib"
   depends_on "gtk+3"
   depends_on "gtk-vnc"
+  # meson.build asks for both libvirt and libvirt-glib; the built virt-viewer binary
+  # links libvirt.0.dylib directly, so declare it rather than relying on the
+  # transitive dependency.
+  depends_on "libvirt"
   depends_on "libvirt-glib"
   depends_on "shared-mime-info"
   depends_on "spice-gtk"
@@ -22,7 +34,17 @@ class VirtViewer < Formula
   patch :DATA
 
   def install
-    system "meson", "setup", "builddir", *std_meson_args
+    # spice, vnc, libvirt, ovirt and vte are all `type: 'feature', value: 'auto'`:
+    # left alone, a missing or renamed .pc drops the feature and the build still
+    # succeeds. For a tap that exists to fix SPICE that is the worst failure mode,
+    # so make the three we depend on hard requirements. ovirt and vte are pinned
+    # off so a later `brew install vte3` cannot quietly change what we build.
+    system "meson", "setup", "builddir", *std_meson_args,
+           "-Dspice=enabled",
+           "-Dvnc=enabled",
+           "-Dlibvirt=enabled",
+           "-Dovirt=disabled",
+           "-Dvte=disabled"
     system "ninja", "-C", "builddir", "install", "-v"
 
     # Run against the patched GTK without inflicting it on the rest of the
@@ -52,9 +74,9 @@ class VirtViewer < Formula
   end
 
   def post_install
-    system Formula["shared-mime-info"].opt_bin/"update-mime-database", HOMEBREW_PREFIX/"share/mime"
-    system Formula["gtk+3"].opt_bin/"gtk3-update-icon-cache", HOMEBREW_PREFIX/"share/icons/hicolor"
-    system Formula["desktop-file-utils"].opt_bin/"update-desktop-database", HOMEBREW_PREFIX/"share/applications"
+    system formula_opt_bin("shared-mime-info")/"update-mime-database", HOMEBREW_PREFIX/"share/mime"
+    system formula_opt_bin("gtk+3")/"gtk3-update-icon-cache", HOMEBREW_PREFIX/"share/icons/hicolor"
+    system formula_opt_bin("desktop-file-utils")/"update-desktop-database", HOMEBREW_PREFIX/"share/applications"
   end
 
   test do
