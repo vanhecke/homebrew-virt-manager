@@ -99,7 +99,16 @@ class VirtViewer < Formula
   end
 
   test do
-    system bin/"virt-viewer", "--version"
+    assert_match version.to_s, shell_output("#{bin}/virt-viewer --version")
+    assert_match version.to_s, shell_output("#{bin}/remote-viewer --version")
+
+    # The wrapper is the whole tap. If it ever stops pointing at the private GTK,
+    # virt-viewer silently loads the stock copy instead, everything still starts,
+    # and the clipboard crash comes back months later with nothing to connect it
+    # to. Assert on the wrapper rather than on behaviour because the failure is
+    # invisible until a guest is actually connected.
+    gtkvv = Formula["vanhecke/virt-manager/gtk+3-virt-viewer"]
+    assert_match gtkvv.opt_lib.to_s, (bin/"virt-viewer").read
   end
 end
 __END__
