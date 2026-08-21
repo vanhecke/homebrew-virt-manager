@@ -22,7 +22,7 @@ jobs:
   gtk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Compare our gtk version against Homebrew core
         id: check
@@ -71,7 +71,7 @@ jobs:
 
       - name: Open or update the tracking issue
         if: steps.check.outputs.drift == 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           CORE: ${{ steps.check.outputs.core }}
           OURS: ${{ steps.check.outputs.ours }}
@@ -131,7 +131,7 @@ jobs:
   virt-viewer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Compare our virt-viewer version against upstream releases
         id: check
@@ -166,7 +166,7 @@ jobs:
 
       - name: Open or update the tracking issue
         if: steps.check.outputs.drift == 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           LATEST: ${{ steps.check.outputs.latest }}
           OURS: ${{ steps.check.outputs.ours }}
