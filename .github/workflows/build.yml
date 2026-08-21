@@ -1,0 +1,64 @@
+name: build
+
+# The expensive half, kept off the push path on purpose. gtk+3-virt-viewer is
+# built from source and takes around twenty minutes locally, longer on a hosted
+# runner. Neither formula changes often, so building on every push would mostly
+# re-prove the same result. Monthly plus on demand still catches the thing this
+# is for: a dependency in the graph moving underneath us.
+
+on:
+  schedule:
+    - cron: "43 5 3 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  test-bot:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@8f3d1ec8a696b3b9d9a6c3696b6c73033cab69e4 # 2026.08.14.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: macos-26-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: macos-26-rubygems-
+
+      - run: brew test-bot --only-cleanup-before
+
+      - run: brew test-bot --only-setup
+
+      # --testing-formulae is not optional here. Left to itself test-bot works
+      # out what to build from the pull request diff, and a scheduled run has no
+      # diff -- it would find nothing to do and report success having built
+      # nothing at all. --skip-dependents because both formulae are named
+      # explicitly and nothing outside the tap depends on either.
+      - name: Build and test both formulae
+        env:
+          TAP: ${{ steps.set-up-homebrew.outputs.tap-name }}
+        run: |
+          brew test-bot --only-formulae --skip-dependents \
+            --testing-formulae="${TAP}/gtk+3-virt-viewer,${TAP}/virt-viewer"
+
+      # virt-viewer's wrapper embeds gtk+3-virt-viewer's opt path as a literal
+      # string, so bottling depends on Homebrew's text relocation rewriting it.
+      # It should; keep the bottles around to check the first time this runs.
+      - name: Upload bottles as artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bottles
+          path: '*.bottle.*'
+          if-no-files-found: ignore

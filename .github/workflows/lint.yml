@@ -1,0 +1,61 @@
+name: lint
+
+# Cheap enough to run on every push, and the only thing standing between a
+# rotting upstream and a tap that quietly cannot build any more.
+#
+# `brew test-bot --only-tap-syntax` is `brew style` plus `brew readall`, both
+# entirely offline. It would *not* have caught virt-viewer's source tarball
+# going 404, which went unnoticed for years precisely because the file sat in
+# the local Homebrew cache and every rebuild here was served from it. The audit
+# step below is the one that reaches the network, and it is why this file
+# exists at all.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  lint:
+    # macOS rather than the cheaper Linux container: both formulae are written
+    # for Quartz, so an audit run on Linux would evaluate a different set of
+    # `depends_on` branches than the one anybody actually installs.
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      # No actions/checkout step. setup-homebrew clones this repository itself
+      # and taps it, because the repository is named homebrew-virt-manager --
+      # that is what makes the fully qualified formula names below resolve.
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@8f3d1ec8a696b3b9d9a6c3696b6c73033cab69e4 # 2026.08.14.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: macos-26-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: macos-26-rubygems-
+
+      - run: brew test-bot --only-cleanup-before
+
+      - run: brew test-bot --only-setup
+
+      - run: brew test-bot --only-tap-syntax
+
+      # Taken from the tap-name output rather than hardcoded, so renaming the
+      # repository fails visibly here instead of auditing nothing.
+      - name: Audit both formulae
+        env:
+          TAP: ${{ steps.set-up-homebrew.outputs.tap-name }}
+        run: brew audit --strict --online "${TAP}/virt-viewer" "${TAP}/gtk+3-virt-viewer"
