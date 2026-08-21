@@ -17,12 +17,38 @@ class VirtViewer < Formula
   depends_on "libvirt-glib"
   depends_on "shared-mime-info"
   depends_on "spice-gtk"
+  depends_on "vanhecke/virt-manager/gtk+3-virt-viewer"
 
   patch :DATA
 
   def install
     system "meson", "setup", "builddir", *std_meson_args
     system "ninja", "-C", "builddir", "install", "-v"
+
+    # Run against the patched GTK without inflicting it on the rest of the
+    # machine. DYLD_LIBRARY_PATH overrides by leaf name for every dependent in
+    # the process, so spice-gtk and gtk-vnc -- which link libgtk-3 themselves
+    # and would otherwise pull in the stock copy -- resolve to the patched one
+    # too. That matters: two libgtk-3 in one process means duplicate GTypes and
+    # duplicate static state, which breaks far worse than the bug being fixed.
+    gtkvv = Formula["vanhecke/virt-manager/gtk+3-virt-viewer"]
+    (libexec/"bin").install Dir[bin/"*"]
+    Dir[libexec/"bin/*"].each do |real|
+      wrapper = bin/File.basename(real)
+      # Wrapper, not a symlink: it points this process (and only this process)
+      # at the patched GTK. A command prefix assignment on exec is used rather
+      # than /usr/bin/env because macOS strips every DYLD_* variable when
+      # exec'ing a SIP-protected binary, and env is one -- an env based wrapper
+      # would silently do nothing. Keep this wrapper free of diagnostics: it is
+      # on the path of every launch, and keeping the tap in step with core's
+      # gtk+3 is the maintainer's job, not the user's. See
+      # .github/workflows/gtk-version-drift.yml.
+      wrapper.write <<~SH
+        #!/bin/bash
+        DYLD_LIBRARY_PATH="#{gtkvv.opt_lib}" exec "#{real}" "$@"
+      SH
+      wrapper.chmod 0555
+    end
   end
 
   def post_install
