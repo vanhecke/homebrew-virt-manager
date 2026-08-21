@@ -170,3 +170,27 @@ index d718491..4325108 100644
      /* first, send the modifiers */
      for (i = 0; i < G_N_ELEMENTS(modifiers); i++) {
          if (accel_mods & modifiers[i].mask)
+--- a/src/virt-viewer-app.c
++++ b/src/virt-viewer-app.c
+@@ -2468,13 +2468,19 @@
+     VirtViewerAppPrivate *priv = virt_viewer_app_get_instance_private(self);
+     GError *error = NULL;
+     gint i;
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(GDK_WINDOWING_QUARTZ)
+     GtkSettings *gtk_settings;
+ #endif
+ 
+     G_APPLICATION_CLASS(virt_viewer_app_parent_class)->startup(app);
+ 
+-#ifndef G_OS_WIN32
++/* Forcing dark here would pin gtk-application-prefer-dark-theme at
++ * GTK_SETTINGS_SOURCE_APPLICATION, which outranks both settings.ini and the
++ * windowing backend, so nothing could ever override it. On macOS the backend
++ * reports the system appearance (see the gtk3 quartz system-appearance patch),
++ * and we want to follow it rather than override it.
++ */
++#if !defined(G_OS_WIN32) && !defined(GDK_WINDOWING_QUARTZ)
+     gtk_settings = gtk_settings_get_default();
+     g_object_set(G_OBJECT(gtk_settings),
+                  "gtk-application-prefer-dark-theme",
