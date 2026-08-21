@@ -6,23 +6,16 @@ class Gtkx3VirtViewer < Formula
   license "LGPL-2.0-or-later"
   compatibility_version 1
 
+  livecheck do
+    url :stable
+    regex(/gtk\+?[._-](3\.([0-8]\d*?)?[02468](?:\.\d+)*?)\.t/i)
+  end
+
   # Deliberately keg-only. These patches change GTK behaviour process-wide --
   # gtk3-0002 makes every GtkClipboard emit ::owner-change on app activation --
   # and there is no reason to impose that on every GTK app on the machine. Only
   # virt-viewer's own wrapper puts this copy on DYLD_LIBRARY_PATH.
   keg_only "it is a patched GTK for virt-viewer only and must not shadow the stock gtk+3"
-
-  # The stock gtk+3 of the same version supplies the compiled GSettings schemas
-  # and icon cache in the shared prefix, which this copy reads at runtime.
-  depends_on "gtk+3"
-
-  # See patches/ and README.md.
-  patch :DATA
-
-  livecheck do
-    url :stable
-    regex(/gtk\+?[._-](3\.([0-8]\d*?)?[02468](?:\.\d+)*?)\.t/i)
-  end
 
   depends_on "docbook" => :build
   depends_on "docbook-xsl" => :build
@@ -38,6 +31,9 @@ class Gtkx3VirtViewer < Formula
   depends_on "gdk-pixbuf"
   depends_on "glib"
   depends_on "gsettings-desktop-schemas"
+  # The stock gtk+3 of the same version supplies the compiled GSettings schemas
+  # and icon cache in the shared prefix, which this copy reads at runtime.
+  depends_on "gtk+3"
   depends_on "harfbuzz"
   depends_on "hicolor-icon-theme"
   depends_on "libepoxy"
@@ -66,6 +62,9 @@ class Gtkx3VirtViewer < Formula
     depends_on "wayland-protocols"
     depends_on "xorgproto"
   end
+
+  # See patches/ and README.md.
+  patch :DATA
 
   def install
     # spice-gtk and gtk-vnc are core bottles built against core's gtk+3, but

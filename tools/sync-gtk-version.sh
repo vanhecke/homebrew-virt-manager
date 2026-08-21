@@ -15,47 +15,51 @@ FORMULA="gtk+3-virt-viewer.rb"
 
 json() { brew info --json=v2 "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])'; }
 core=$(json gtk+3)
-ours=$(grep -m1 '^  url ' "$FORMULA" | sed -E 's|.*/gtk-([0-9.]+)\.tar\.xz.*|\1|')
+ours=$(grep -m1 '^  url ' "${FORMULA}" | sed -E 's|.*/gtk-([0-9.]+)\.tar\.xz.*|\1|')
 
-echo "core gtk+3        : $core"
-echo "gtk+3-virt-viewer : $ours"
+echo "core gtk+3        : ${core}"
+echo "gtk+3-virt-viewer : ${ours}"
 
-if [ "$core" = "$ours" ]; then
+if [[ "${core}" = "${ours}" ]]
+then
   echo "in step, nothing to do"
   exit 0
 fi
 
 echo
 echo "VERSION SKEW. remote-viewer may fail to launch after core's spice-gtk or"
-echo "gtk-vnc bottles are rebuilt against gtk+3 $core."
+echo "gtk-vnc bottles are rebuilt against gtk+3 ${core}."
 
-if [ "${1:-}" != "--bump" ]; then
-  echo "re-run with --bump to update the formula to $core"
+if [[ "${1:-}" != "--bump" ]]
+then
+  echo "re-run with --bump to update the formula to ${core}"
   exit 1
 fi
 
 series="${core%.*}"
 url="https://download.gnome.org/sources/gtk/${series}/gtk-${core}.tar.xz"
 echo
-echo "fetching $url"
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-curl -fsSL -o "$tmp/gtk.tar.xz" "$url"
-sha=$(shasum -a 256 "$tmp/gtk.tar.xz" | cut -d' ' -f1)
-echo "sha256 $sha"
+echo "fetching ${url}"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL -o "${tmp}/gtk.tar.xz" "${url}"
+sha=$(shasum -a 256 "${tmp}/gtk.tar.xz" | cut -d' ' -f1)
+echo "sha256 ${sha}"
 
 # Do the patches still apply to the new tarball? Never bump blindly.
-tar xf "$tmp/gtk.tar.xz" -C "$tmp"
-sed -n '/^__END__$/,$p' "$FORMULA" | tail -n +2 > "$tmp/p.patch"
-if ! ( cd "$tmp/gtk-$core" && patch -p1 --dry-run < "$tmp/p.patch" >/dev/null 2>&1 ); then
+tar xf "${tmp}/gtk.tar.xz" -C "${tmp}"
+sed -n '/^__END__$/,$p' "${FORMULA}" | tail -n +2 >"${tmp}/p.patch"
+if ! (cd "${tmp}/gtk-${core}" && patch -p1 --dry-run <"${tmp}/p.patch" >/dev/null 2>&1)
+then
   echo
-  echo "REFUSING TO BUMP: the patches do not apply cleanly to gtk $core."
+  echo "REFUSING TO BUMP: the patches do not apply cleanly to gtk ${core}."
   echo "Rebase them by hand (see Maintenance in README.md), then re-run."
-  ( cd "$tmp/gtk-$core" && patch -p1 --dry-run < "$tmp/p.patch" 2>&1 | head -20 )
+  (cd "${tmp}/gtk-${core}" && patch -p1 --dry-run <"${tmp}/p.patch" 2>&1 | head -20)
   exit 1
 fi
 echo "patches still apply cleanly"
 
-python3 - "$FORMULA" "$core" "$sha" "$url" <<'PY'
+python3 - "${FORMULA}" "${core}" "${sha}" "${url}" <<'PY'
 import re, sys
 f, ver, sha, url = sys.argv[1:5]
 s = open(f).read()
@@ -64,7 +68,7 @@ s = re.sub(r'^  sha256 "[0-9a-f]{64}"$', f'  sha256 "{sha}"', s, count=1, flags=
 open(f, "w").write(s)
 PY
 echo
-echo "formula bumped to $core. Now:"
+echo "formula bumped to ${core}. Now:"
 echo "  brew unpin vanhecke/virt-manager/gtk+3-virt-viewer"
 echo "  brew reinstall --build-from-source vanhecke/virt-manager/gtk+3-virt-viewer"
 echo "  brew pin vanhecke/virt-manager/gtk+3-virt-viewer"
