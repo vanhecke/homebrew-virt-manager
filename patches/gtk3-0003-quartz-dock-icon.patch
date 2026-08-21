@@ -1,0 +1,63 @@
+--- a/gdk/quartz/gdkwindow-quartz.c
++++ b/gdk/quartz/gdkwindow-quartz.c
+@@ -32,6 +32,7 @@
+ #include "gdkquartzscreen.h"
+ #include "gdkquartzcursor.h"
+ #include "gdkquartz-cocoa-access.h"
++#include "gdkquartz-gtk-only.h"
+ #include "gdkinternal-quartz.h"
+ 
+ #include <Carbon/Carbon.h>
+@@ -2496,7 +2497,51 @@
+ gdk_quartz_window_set_icon_list (GdkWindow *window,
+                                  GList     *pixbufs)
+ {
+-  /* FIXME: Implement */
++  GdkPixbuf *best = NULL;
++  gint best_area = 0;
++  GList *l;
++  NSImage *image;
++
++  if (GDK_WINDOW_DESTROYED (window) ||
++      !WINDOW_IS_TOPLEVEL (window))
++    return;
++
++  /* macOS has no per-window icon, but what a GTK application sets here is
++   * exactly what the user expects to see in the Dock and the app switcher, so
++   * map it onto the application icon rather than dropping it. Without this a
++   * GTK application started from a terminal keeps the generic executable icon
++   * no matter what gtk_window_set_default_icon_name() says. Cocoa derives
++   * every size it needs from one image, so hand it the largest pixbuf.
++   */
++  for (l = pixbufs; l != NULL; l = l->next)
++    {
++      GdkPixbuf *pixbuf = l->data;
++      gint area;
++
++      if (!GDK_IS_PIXBUF (pixbuf))
++        continue;
++
++      area = gdk_pixbuf_get_width (pixbuf) * gdk_pixbuf_get_height (pixbuf);
++      if (area > best_area)
++        {
++          best = pixbuf;
++          best_area = area;
++        }
++    }
++
++  if (best == NULL)
++    return;
++
++  GDK_QUARTZ_ALLOC_POOL;
++
++  /* The helper returns an autoreleased image; setApplicationIconImage:
++   * retains it, so there is nothing to release here.
++   */
++  image = gdk_quartz_pixbuf_to_ns_image_libgtk_only (best);
++  if (image != NULL)
++    [NSApp setApplicationIconImage:image];
++
++  GDK_QUARTZ_RELEASE_POOL;
+ }
+ 
+ static void
