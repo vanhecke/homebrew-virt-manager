@@ -1,0 +1,202 @@
+name: upstream version drift
+
+# spice-gtk and gtk-vnc are Homebrew core bottles built against core's gtk+3,
+# but virt-viewer's wrapper redirects them to our private gtk+3-virt-viewer at
+# runtime. If core moves ahead and those bottles are rebuilt against the newer
+# gtk, they can reference symbols our older copy does not export and dyld will
+# refuse to launch remote-viewer.
+#
+# Users should not have to care about that, so instead of warning them at
+# runtime this checks daily and opens an issue for the maintainer.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  gtk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare our gtk version against Homebrew core
+        id: check
+        run: |
+          set -euo pipefail
+          core=$(curl -fsSL https://formulae.brew.sh/api/formula/gtk%2B3.json \
+                 | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"]["stable"])')
+          ours=$(grep -m1 '^  url ' 'gtk+3-virt-viewer.rb' \
+                 | sed -E 's|.*/gtk-([0-9.]+)\.tar\.xz.*|\1|')
+          echo "core=$core" >> "$GITHUB_OUTPUT"
+          echo "ours=$ours" >> "$GITHUB_OUTPUT"
+          if [ "$core" = "$ours" ]; then
+            echo "in step at $core"
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::core gtk+3 is $core, gtk+3-virt-viewer is $ours"
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Knowing whether the patches survive the new release is most of the work
+      # of responding to this, so do it here rather than leaving it to discover.
+      - name: Check whether the patches still apply to the new release
+        id: patches
+        if: steps.check.outputs.drift == 'true'
+        run: |
+          set -uo pipefail
+          core='${{ steps.check.outputs.core }}'
+          series="${core%.*}"
+          url="https://download.gnome.org/sources/gtk/${series}/gtk-${core}.tar.xz"
+          curl -fsSL -o gtk.tar.xz "$url"
+          echo "sha256=$(sha256sum gtk.tar.xz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          tar xf gtk.tar.xz
+          sed -n '/^__END__$/,$p' 'gtk+3-virt-viewer.rb' | tail -n +2 > p.patch
+          if ( cd "gtk-$core" && patch -p1 --dry-run < ../p.patch >/dev/null 2>&1 ); then
+            echo "apply=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply=conflict" >> "$GITHUB_OUTPUT"
+            ( cd "gtk-$core" && patch -p1 --dry-run < ../p.patch 2>&1 | head -40 ) > reject.txt || true
+            {
+              echo 'rejects<<REJECTS'
+              cat reject.txt
+              echo 'REJECTS'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.drift == 'true'
+        uses: actions/github-script@v7
+        env:
+          CORE: ${{ steps.check.outputs.core }}
+          OURS: ${{ steps.check.outputs.ours }}
+          APPLY: ${{ steps.patches.outputs.apply }}
+          SHA256: ${{ steps.patches.outputs.sha256 }}
+          URL: ${{ steps.patches.outputs.url }}
+          REJECTS: ${{ steps.patches.outputs.rejects }}
+        with:
+          script: |
+            const {CORE, OURS, APPLY, SHA256, URL, REJECTS} = process.env;
+            const title = `gtk+3 ${CORE} is out: bump gtk+3-virt-viewer (currently ${OURS})`;
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+            });
+            if (existing.some(i => i.title === title)) {
+              core.info('issue already open, nothing to do');
+              return;
+            }
+
+            const clean = APPLY === 'clean';
+            const body = [
+              `Homebrew core's \`gtk+3\` is now **${CORE}**; \`gtk+3-virt-viewer\` is **${OURS}**.`,
+              ``,
+              `\`spice-gtk\` and \`gtk-vnc\` bottles are built against core's gtk+3 but are`,
+              `redirected to our private copy at runtime, so once those bottles are rebuilt`,
+              `against ${CORE} they may reference symbols ${OURS} does not export and dyld will`,
+              `refuse to launch \`remote-viewer\`.`,
+              ``,
+              clean
+                ? `The patches **still apply cleanly** to ${CORE}, so this should just be a bump:`
+                : `:warning: The patches **do not apply cleanly** to ${CORE} and need rebasing first.`,
+              ``,
+              '```sh',
+              './tools/sync-gtk-version.sh --bump',
+              'brew unpin vanhecke/virt-manager/gtk+3-virt-viewer',
+              'brew reinstall --build-from-source vanhecke/virt-manager/gtk+3-virt-viewer',
+              'brew pin vanhecke/virt-manager/gtk+3-virt-viewer',
+              '```',
+              ``,
+              `New tarball: ${URL}`,
+              `sha256: \`${SHA256}\``,
+              ...(clean ? [] : ['', '<details><summary>patch output</summary>', '', '```', REJECTS || '(none captured)', '```', '</details>']),
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo, title, body,
+            });
+
+  # virt-viewer 11.0 is from November 2021 and pagure is effectively frozen --
+  # development moved to gitlab.com/virt-viewer/virt-viewer -- so this will
+  # almost never fire. When it does it matters: a new release means
+  # patches/virt-viewer-0001-accel-command-modifier.patch has to be rebased,
+  # which is the same class of breakage the gtk job above exists to catch.
+  virt-viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare our virt-viewer version against upstream releases
+        id: check
+        run: |
+          set -euo pipefail
+          ours=$(grep -m1 '^  url ' 'virt-viewer.rb' \
+                 | sed -E 's|.*/virt-viewer-([0-9.]+)\.tar\.xz.*|\1|')
+          # `|| true` so an empty match is reported below rather than dying in
+          # the pipe under `set -o pipefail` with nothing useful in the log.
+          latest=$(curl -fsSL https://releases.pagure.org/virt-viewer/ \
+                   | grep -oE 'virt-viewer-[0-9]+(\.[0-9]+)+\.tar\.xz' \
+                   | sed -E 's|virt-viewer-(.*)\.tar\.xz|\1|' \
+                   | sort -V | tail -1 || true)
+          # An empty result means the listing changed shape, not that there is no
+          # new release. Fail rather than report "in step" on no evidence.
+          if [ -z "$latest" ]; then
+            echo "::error::could not parse any version out of the pagure listing"
+            exit 1
+          fi
+          echo "ours=$ours" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          newest=$(printf '%s\n%s\n' "$ours" "$latest" | sort -V | tail -1)
+          if [ "$latest" != "$ours" ] && [ "$newest" = "$latest" ]; then
+            echo "::warning::virt-viewer $latest is out, formula is $ours"
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "in step at $ours"
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.drift == 'true'
+        uses: actions/github-script@v7
+        env:
+          LATEST: ${{ steps.check.outputs.latest }}
+          OURS: ${{ steps.check.outputs.ours }}
+        with:
+          script: |
+            const {LATEST, OURS} = process.env;
+            const title = `virt-viewer ${LATEST} is out: bump the formula (currently ${OURS})`;
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+            });
+            if (existing.some(i => i.title === title)) {
+              core.info('issue already open, nothing to do');
+              return;
+            }
+
+            const body = [
+              `Upstream released **${LATEST}**; this tap builds **${OURS}**.`,
+              ``,
+              `\`patches/virt-viewer-0001-accel-command-modifier.patch\` is a context diff`,
+              `against ${OURS} and will need rebasing. Check first whether the Command-key`,
+              `modifier fix landed upstream -- if it did, the patch can simply be dropped.`,
+              ``,
+              '```sh',
+              `curl -fsSLO https://releases.pagure.org/virt-viewer/virt-viewer-${LATEST}.tar.xz`,
+              `sha256sum virt-viewer-${LATEST}.tar.xz`,
+              `tar xf virt-viewer-${LATEST}.tar.xz`,
+              `cd virt-viewer-${LATEST} && patch -p1 --dry-run < ../patches/virt-viewer-0001-accel-command-modifier.patch`,
+              '```',
+              ``,
+              `Then bump \`url\`/\`sha256\` in \`virt-viewer.rb\`, regenerate its \`__END__\``,
+              `block from \`patches/\`, and reinstall (see Maintenance in README.md).`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo, title, body,
+            });
