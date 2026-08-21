@@ -1,7 +1,14 @@
 class VirtViewer < Formula
   desc "App for virtualized guest interaction"
   homepage "https://virt-manager.org/"
-  url "https://releases.pagure.org/virt-viewer/virt-viewer-11.0.tar.xz"
+  # Not releases.pagure.org: that directory stopped serving a file listing and every
+  # tarball under it now 404s. Development moved to gitlab.com/virt-viewer/virt-viewer
+  # and the release assets went with it, into GitLab's generic package registry. The
+  # URL is ugly, but the project publishes no plainer alias for it.
+  url "https://gitlab.com/api/v4/projects/virt-viewer%2Fvirt-viewer/packages/generic/release-assets/v11.0/virt-viewer-11.0.tar.xz"
+  # Unchanged from the pagure tarball -- byte for byte the same 259772-byte file. That
+  # identity is the evidence this is the same artifact rather than a repackage, so do
+  # not "correct" it against a freshly downloaded checksum.
   sha256 "a43fa2325c4c1c77a5c8c98065ac30ef0511a21ac98e590f22340869bad9abd0"
   # COPYING is the GPLv2 text and every source header reads "either version 2 of
   # the License, or (at your option) any later version". Upstream's meson.build
