@@ -106,10 +106,16 @@ class VirtViewer < Formula
     end
   end
 
-  def post_install
-    system formula_opt_bin("shared-mime-info")/"update-mime-database", HOMEBREW_PREFIX/"share/mime"
-    system formula_opt_bin("gtk+3")/"gtk3-update-icon-cache", HOMEBREW_PREFIX/"share/icons/hicolor"
-    system formula_opt_bin("desktop-file-utils")/"update-desktop-database", HOMEBREW_PREFIX/"share/applications"
+  # Named steps, not `def post_install`. Homebrew 7 rejects the method: `brew style`
+  # fails FormulaAudit/InstallSteps, and pouring the bottle raises
+  # MethodDeprecatedError before these caches are rebuilt. The steps call the
+  # same three tools against the same prefix paths. `update_gtk_icon_cache`
+  # prefers gtk4's binary when gtk4 is installed and passes `-q -t -f`; that is
+  # Homebrew's shared hicolor-cache policy.
+  post_install_steps do
+    update_mime_database
+    update_gtk_icon_cache
+    update_desktop_database
   end
 
   test do
