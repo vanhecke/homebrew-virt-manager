@@ -4,6 +4,9 @@ class Gtkx3VirtViewer < Formula
   url "https://download.gnome.org/sources/gtk/3.24/gtk-3.24.52.tar.xz"
   sha256 "80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f"
   license "LGPL-2.0-or-later"
+  # Same-version rebuild for the macOS focus backports below. The sync script
+  # drops this line when it bumps the upstream version.
+  revision 1
   compatibility_version 1
 
   livecheck do
@@ -61,6 +64,26 @@ class Gtkx3VirtViewer < Formula
     depends_on "wayland"
     depends_on "wayland-protocols"
     depends_on "xorgproto"
+  end
+
+  # Fix macOS focus regression introduced in GTK 3.24.52:
+  # New dialogs do not receive focus on macOS.
+  # Remove for GTK 3.24.53 or later.
+  patch do
+    url "https://github.com/GNOME/gtk/commit/f80b61d6c8d6de0ce80c29052590c359a7f4b465.patch?full_index=1"
+    sha256 "5f9e57e0824e35fdf78c3c388e084a840909c0d4c760e7fec69d99b2326a37fd"
+    type :backport
+    resolves "https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/9951"
+  end
+
+  # Fix macOS focus regression introduced in GTK 3.24.52:
+  # Closed dialogs do not restore parent focus on macOS.
+  # Remove for GTK 3.24.53 or later.
+  patch do
+    url "https://github.com/GNOME/gtk/commit/9667dc9166513ba0e99043920cf80562f8a8b926.patch?full_index=1"
+    sha256 "3fc4ea96f8be403233421953da572744e4806d76cc2b1ec2d18af79ddc7f8030"
+    type :backport
+    resolves "https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/10037"
   end
 
   # See patches/ and README.md.

@@ -8,6 +8,11 @@ name: upstream version drift
 #
 # Users should not have to care about that, so instead of warning them at
 # runtime this checks daily and opens an issue for the maintainer.
+#
+# A matching version is not enough. Core ships same-version backport patches
+# (gtk+3 3.24.52 revision 1 fixed two macOS focus regressions) and the wrapper
+# redirects virt-viewer onto our copy, so a missing backport is a bug stock
+# gtk+3 no longer has. When the versions match, the patch URLs are compared too.
 
 on:
   schedule:
@@ -34,19 +39,44 @@ jobs:
                  | sed -E 's|.*/gtk-([0-9.]+)\.tar\.xz.*|\1|')
           echo "core=$core" >> "$GITHUB_OUTPUT"
           echo "ours=$ours" >> "$GITHUB_OUTPUT"
-          if [ "$core" = "$ours" ]; then
-            echo "in step at $core"
-            echo "drift=false" >> "$GITHUB_OUTPUT"
-          else
+          # Commit-patch URLs only. The tarball url is a different line.
+          # grep exits 1 when a formula has no backport patches. That is a
+          # normal result, so the empty match must not trip set -e / pipefail.
+          patch_urls() {
+            { grep -E '^[[:space:]]*url "https://github.com/GNOME/gtk/commit/' "$1" || true; } \
+              | sed -E 's/.*"([^"]+)".*/\1/' | sort
+          }
+          curl -fsSL -o core.rb \
+            https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Formula/g/gtk+3.rb
+          patch_urls core.rb > core-patches.txt
+          patch_urls gtk+3-virt-viewer.rb > ours-patches.txt
+          {
+            echo 'missing<<MISSING'
+            comm -13 ours-patches.txt core-patches.txt
+            echo 'MISSING'
+            echo 'extra<<EXTRA'
+            comm -23 ours-patches.txt core-patches.txt
+            echo 'EXTRA'
+          } >> "$GITHUB_OUTPUT"
+          if [ "$core" != "$ours" ]; then
             echo "::warning::core gtk+3 is $core, gtk+3-virt-viewer is $ours"
             echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "reason=version" >> "$GITHUB_OUTPUT"
+          elif ! cmp -s core-patches.txt ours-patches.txt; then
+            echo "::warning::gtk+3 $core backport patches differ"
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "reason=backports" >> "$GITHUB_OUTPUT"
+          else
+            echo "in step at $core"
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "reason=none" >> "$GITHUB_OUTPUT"
           fi
 
       # Knowing whether the patches survive the new release is most of the work
       # of responding to this, so do it here rather than leaving it to discover.
       - name: Check whether the patches still apply to the new release
         id: patches
-        if: steps.check.outputs.drift == 'true'
+        if: steps.check.outputs.reason == 'version'
         run: |
           set -uo pipefail
           core='${{ steps.check.outputs.core }}'
@@ -76,13 +106,19 @@ jobs:
           CORE: ${{ steps.check.outputs.core }}
           OURS: ${{ steps.check.outputs.ours }}
           APPLY: ${{ steps.patches.outputs.apply }}
+          REASON: ${{ steps.check.outputs.reason }}
           SHA256: ${{ steps.patches.outputs.sha256 }}
           URL: ${{ steps.patches.outputs.url }}
           REJECTS: ${{ steps.patches.outputs.rejects }}
+          MISSING: ${{ steps.check.outputs.missing }}
+          EXTRA: ${{ steps.check.outputs.extra }}
         with:
           script: |
-            const {CORE, OURS, APPLY, SHA256, URL, REJECTS} = process.env;
-            const title = `gtk+3 ${CORE} is out: bump gtk+3-virt-viewer (currently ${OURS})`;
+            const {CORE, OURS, APPLY, REASON, SHA256, URL, REJECTS, MISSING, EXTRA} = process.env;
+            const versionDrift = REASON === 'version';
+            const title = versionDrift
+              ? `gtk+3 ${CORE} is out: bump gtk+3-virt-viewer (currently ${OURS})`
+              : `gtk+3 ${CORE} has backports missing from gtk+3-virt-viewer`;
 
             const existing = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner, repo: context.repo.repo, state: 'open',
@@ -92,8 +128,10 @@ jobs:
               return;
             }
 
+            const list = (text) => (text || '').split('\n').map(s => s.trim()).filter(Boolean);
+            const bullets = (urls) => urls.length ? urls.map(u => `- ${u}`).join('\n') : '- (none)';
             const clean = APPLY === 'clean';
-            const body = [
+            const body = versionDrift ? [
               `Homebrew core's \`gtk+3\` is now **${CORE}**; \`gtk+3-virt-viewer\` is **${OURS}**.`,
               ``,
               `\`spice-gtk\` and \`gtk-vnc\` bottles are built against core's gtk+3 but are`,
@@ -115,6 +153,25 @@ jobs:
               `New tarball: ${URL}`,
               `sha256: \`${SHA256}\``,
               ...(clean ? [] : ['', '<details><summary>patch output</summary>', '', '```', REJECTS || '(none captured)', '```', '</details>']),
+            ].join('\n') : [
+              `Homebrew core's \`gtk+3\` is still **${CORE}**, the same version as`,
+              `\`gtk+3-virt-viewer\`, but the backport patch URLs differ.`,
+              ``,
+              `\`spice-gtk\` and \`gtk-vnc\` are redirected onto our private copy, so`,
+              `virt-viewer keeps the bugs those backports fix. The daily version check`,
+              `used to report this as in step.`,
+              ``,
+              `In core, missing here:`,
+              ``,
+              bullets(list(MISSING)),
+              ``,
+              `Here, but not in core:`,
+              ``,
+              bullets(list(EXTRA)),
+              ``,
+              `Copy the \`patch do\` blocks from`,
+              `\`homebrew-core\` \`Formula/g/gtk+3.rb\`. They apply before \`patch :DATA\`.`,
+              `\`./tools/sync-gtk-version.sh --bump\` will not do this; the tarball is unchanged.`,
             ].join('\n');
 
             await github.rest.issues.create({
